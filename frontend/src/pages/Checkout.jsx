@@ -17,17 +17,28 @@ function Checkout() {
   // CHECKOUT SESSION
   // =========================================
 
-  const [sessionId] = useState(
-    () => crypto.randomUUID()
-  );
+  const [sessionId] = useState(() => {
+    let existingSessionId =
+      sessionStorage.getItem(
+        "second_chance_session_id"
+      );
+
+    if (!existingSessionId) {
+      existingSessionId =
+        crypto.randomUUID();
+
+      sessionStorage.setItem(
+        "second_chance_session_id",
+        existingSessionId
+      );
+    }
+
+    return existingSessionId;
+  });
 
   // Prevent duplicate CHECKOUT_STARTED
   // requests during the same checkout session.
   const checkoutStartedRef = useRef(false);
-
-  // Stores the last cart state that was
-  // successfully/attempted to be recorded.
-  const lastCartSignatureRef = useRef(null);
 
   // =========================================
   // CUSTOMER INFORMATION
@@ -88,7 +99,7 @@ function Checkout() {
           sessionId
         );
       } catch (error) {
-        // Allow retry if the request fails.
+        // Allow retry if request fails.
         checkoutStartedRef.current = false;
 
         console.error(
@@ -101,97 +112,6 @@ function Checkout() {
     startCheckout();
   }, [
     cart.length,
-    cartTotal,
-    sessionId,
-  ]);
-
-  // =========================================
-  // CART_UPDATED EVENT
-  // =========================================
-
-  useEffect(() => {
-    if (cart.length === 0) {
-      return;
-    }
-
-    // Create a deterministic representation
-    // of the current cart state.
-    const cartSignature = JSON.stringify(
-      cart.map((item) => ({
-        id: item.id,
-        quantity: item.quantity,
-        price: item.price,
-      }))
-    );
-
-    // If the exact same cart state has
-    // already generated an event, stop here.
-    if (
-      lastCartSignatureRef.current ===
-      cartSignature
-    ) {
-      return;
-    }
-
-    // Remember this cart state before
-    // making the API request.
-    lastCartSignatureRef.current =
-      cartSignature;
-
-    const updateCartEvent = async () => {
-      try {
-        await sendEvent({
-          event_type: "CART_UPDATED",
-
-          session_id: sessionId,
-
-          cart_value: cartTotal,
-
-          // Same cart state = same event key.
-          // MongoDB will reject duplicates.
-          event_key:
-            `${sessionId}:CART_UPDATED:${cartSignature}`,
-
-          source: "web",
-
-          metadata: {
-            unique_product_count:
-              cart.length,
-
-            total_item_quantity:
-              cart.reduce(
-                (total, item) =>
-                  total + item.quantity,
-                0
-              ),
-
-            items: cart.map((item) => ({
-              product_id: item.id,
-              product_name: item.name,
-              quantity: item.quantity,
-              price: item.price,
-            })),
-          },
-        });
-
-        console.log(
-          "CART_UPDATED recorded:",
-          sessionId
-        );
-      } catch (error) {
-        // Allow retry if the API request fails.
-        lastCartSignatureRef.current = null;
-
-        console.error(
-          "Failed to record cart update:",
-          error
-        );
-      }
-    };
-
-    updateCartEvent();
-  }, [
-    cart,
     cartTotal,
     sessionId,
   ]);
